@@ -3,8 +3,8 @@ import math
 
 # --- CONFIGURARE PAGINĂ ---
 st.set_page_config(
-    page_title="Interpretare Gazometrie (ABG)",
-    page_icon="🫁",
+    page_title="Interpretare Gazometrie (Gazo Simplă)",
+    page_icon="💉",
     layout="centered"
 )
 
@@ -12,241 +12,213 @@ st.set_page_config(
 st.markdown("""
     <style>
     .main-header {
-        font-size: 2.5rem;
+        font-size: 2.2rem;
         color: #0E4F75;
         text-align: center;
         font-weight: bold;
     }
     .sub-header {
-        font-size: 1.2rem;
+        font-size: 1.1rem;
         color: #555;
         text-align: center;
         margin-bottom: 20px;
     }
-    .step-box {
-        background-color: #f0f8ff;
+    .recommendation-box {
+        background-color: #fff3cd;
         padding: 15px;
         border-radius: 10px;
-        border-left: 5px solid #0E4F75;
-        margin-bottom: 20px;
+        border-left: 5px solid #ffc107;
+        margin-top: 20px;
     }
-    .result-alert {
-        padding: 10px;
-        border-radius: 5px;
-        font-weight: bold;
+    .normal-box {
+        background-color: #d4edda;
+        padding: 15px;
+        border-radius: 10px;
+        border-left: 5px solid #28a745;
+        margin-top: 20px;
     }
     </style>
 """, unsafe_allow_html=True)
 
 # --- HEADER ---
-st.markdown('<div class="main-header">Interpretare Gazometrie Arterială (ABG)</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Bazat pe ghidul ATS / Yale - Dr. David A. Kaufman</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">Interpretare Gazometrie Arterială</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">Analiză rapidă + Recomandări de analize suplimentare</div>', unsafe_allow_html=True)
 
-st.info("Această aplicație urmează abordarea în 6 pași descrisă în materialul American Thoracic Society.")
+# --- SIDEBAR: INPUT DATE (CONFORM IMAGINII) ---
+st.sidebar.header("Introduceți valorile din Buletin")
 
-# --- SIDEBAR: INPUT DATE ---
-st.sidebar.header("Introducere Date Pacient")
+# Date obligatorii din imagine
+ph = st.sidebar.number_input("pH Arterial", min_value=6.80, max_value=7.80, value=7.43, step=0.01, format="%.2f")
+pco2 = st.sidebar.number_input("pCO2 (mmHg)", min_value=10.0, max_value=150.0, value=54.0, step=0.1)
+po2 = st.sidebar.number_input("pO2 (mmHg)", min_value=10.0, max_value=500.0, value=68.0, step=0.1)
+co2_total = st.sidebar.number_input("CO2 Total (mmol/L) / HCO3", min_value=5.0, max_value=60.0, value=37.5, step=0.1, help="De obicei HCO3 sau CO2 Total pe aparat")
+base_excess = st.sidebar.number_input("Excès de bases (BE)", min_value=-30.0, max_value=30.0, value=9.0, step=0.1)
+sao2 = st.sidebar.number_input("Saturație O2 (%)", min_value=50.0, max_value=100.0, value=94.6, step=0.1)
+hb = st.sidebar.number_input("Hemoglobină (g/dL)", min_value=3.0, max_value=25.0, value=18.2, step=0.1)
+lactat = st.sidebar.number_input("Lactate (mmol/L)", min_value=0.0, max_value=20.0, value=1.2, step=0.1)
 
-ph = st.sidebar.number_input("pH", min_value=6.80, max_value=7.80, value=7.40, step=0.01, format="%.2f")
-paco2 = st.sidebar.number_input("PaCO2 (mmHg)", min_value=10.0, max_value=150.0, value=40.0, step=1.0)
-hco3 = st.sidebar.number_input("HCO3- (mEq/L)", min_value=5.0, max_value=60.0, value=24.0, step=1.0)
-
+# FiO2 estimat pentru calcul oxigenare
 st.sidebar.markdown("---")
-st.sidebar.subheader("Electroliți (pentru Anion Gap)")
-na = st.sidebar.number_input("Na+ (Sodiu)", min_value=100.0, max_value=180.0, value=140.0, step=1.0)
-cl = st.sidebar.number_input("Cl- (Clor)", min_value=60.0, max_value=140.0, value=100.0, step=1.0)
-albumin = st.sidebar.number_input("Albumina (g/dL)", min_value=0.5, max_value=6.0, value=4.0, step=0.1)
+fio2_percent = st.sidebar.number_input("FiO2 estimat (%)", min_value=21, max_value=100, value=21, help="Aer atmosferic = 21%")
+fio2 = fio2_percent / 100.0
 
-# --- LOGICA DE INTERPRETARE ---
+# --- FUNCȚII LOGICĂ ---
 
-def interpret_abg():
-    # STEP 1: Consistență Internă (Henderson-Hasselbalch)
-    st.markdown("### Pasul 1: Verificarea Consistenței Interne")
+def interpret_oxygenation():
+    st.markdown("### 1. Evaluare Oxigenare")
+    col1, col2 = st.columns(2)
     
-    # Formula din text: [H+] = 24 * (PaCO2 / HCO3)
-    calc_h_plus = 24 * (paco2 / hco3)
+    # Raport P/F
+    pf_ratio = po2 / fio2
     
-    # Maparea pH la H+ (aprox din tabelul textului)
-    # Folosim formula inversă pentru precizie: pH = -log10(H+ * 10^-9) => H+ (nmol/L) = 10^(9 - pH)
-    actual_h_plus_from_ph = 10**(9 - ph)
+    status_oxy = ""
+    color_oxy = "green"
     
-    st.write(f"Calculat [H+] (bazat pe CO2/HCO3): **{calc_h_plus:.1f} nmol/L**")
-    st.write(f"Așteptat [H+] (bazat pe pH): **{actual_h_plus_from_ph:.1f} nmol/L**")
-    
-    diff = abs(calc_h_plus - actual_h_plus_from_ph)
-    if diff > 10: # Marjă de eroare acceptabilă
-        st.warning("⚠️ Valorile par inconsistente (Diferență mare între pH și relația PaCO2/HCO3). Posibilă eroare de recoltare sau analizor.")
+    if po2 < 60:
+        status_oxy = "Hipoxemie Severă (Insuficiență Respiratorie)"
+        color_oxy = "red"
+    elif po2 < 80:
+        status_oxy = "Hipoxemie Ușoară/Moderată"
+        color_oxy = "orange"
     else:
-        st.success("✅ Datele sunt consistente intern.")
+        status_oxy = "Normoxemie"
+    
+    col1.metric("pO2", f"{po2} mmHg")
+    col2.metric("P/F Ratio", f"{int(pf_ratio)}")
+    
+    st.markdown(f"Status: **:{color_oxy}[{status_oxy}]**")
+    
+    if pf_ratio < 300:
+        st.warning(f"⚠️ P/F Ratio ({int(pf_ratio)}) < 300 sugerează afectare pulmonară (ARDS criteria dacă e acut).")
 
-    # STEP 2: Acidemia vs Alkalemia
-    st.markdown("### Pasul 2: Acidemie sau Alcalemie?")
-    primary_status = ""
+def interpret_acid_base():
+    st.markdown("### 2. Echilibru Acido-Bazic")
+    
+    # 1. pH Check
     if ph < 7.35:
-        primary_status = "Acidemie"
-        st.error(f"pH {ph} < 7.35: **Acidemie**")
+        ph_status = "Acidemie"
+        trend = "Acidoză"
     elif ph > 7.45:
-        primary_status = "Alcalemie"
-        st.info(f"pH {ph} > 7.45: **Alcalemie**")
+        ph_status = "Alcalemie"
+        trend = "Alcaloză"
     else:
-        primary_status = "pH Normal"
-        st.success(f"pH {ph} (7.35 - 7.45): **pH în limite normale** (Posibilă tulburare mixtă compensată)")
+        ph_status = "pH Normal"
+        # Determine trend based on midpoint 7.40
+        if ph < 7.40: trend = "Acidoză"
+        else: trend = "Alcaloză"
 
-    # STEP 3: Respirator vs Metabolic
-    st.markdown("### Pasul 3: Tulburare Respiratorie sau Metabolică?")
-    
-    primary_disorder = "Nedeterminat"
-    
-    # Analiză direcțională
-    # Normal PaCO2 = 40, Normal HCO3 = 24
-    paco2_dir = "↑" if paco2 > 42 else ("↓" if paco2 < 38 else "↔")
-    hco3_dir = "↑" if hco3 > 26 else ("↓" if hco3 < 22 else "↔")
-    
-    st.write(f"Direcția PaCO2: {paco2_dir} | Direcția HCO3-: {hco3_dir}")
+    st.write(f"Stare pH: **{ph_status}** ({trend} predominantă)")
 
-    if primary_status == "Acidemie":
-        if paco2 > 42: # Acidemie + CO2 crescut = Respirator
-            primary_disorder = "Acidoză Respiratorie"
-        elif hco3 < 22: # Acidemie + HCO3 scăzut = Metabolic
-            primary_disorder = "Acidoză Metabolică"
-        else:
-            primary_disorder = "Acidoză (Mixtă sau Complexă)"
+    # 2. Determine Primary Disorder
+    # PCO2 Normal: 35-45, HCO3 (CO2Tot) Normal: 22-26
+    
+    pco2_status = "Acid" if pco2 > 45 else ("Alcalin" if pco2 < 35 else "Normal")
+    metabolic_status = "Alcalin" if co2_total > 26 else ("Acid" if co2_total < 22 else "Normal")
+    
+    primary_dx = "Nedeterminat"
+    explanation = ""
+
+    # Logică simplificată ATS
+    if trend == "Acidoză":
+        if pco2 > 45 and co2_total < 22:
+            primary_dx = "Acidoză Mixtă (Resp + Meta)"
+        elif pco2 > 45:
+            primary_dx = "Acidoză Respiratorie"
+            explanation = "CO2 reținut (hipoventilație)."
+        elif co2_total < 22:
+            primary_dx = "Acidoză Metabolică"
+            explanation = "Bicarbonat scăzut."
             
-    elif primary_status == "Alcalemie":
-        if paco2 < 38: # Alcalemie + CO2 scăzut = Respirator
-            primary_disorder = "Alcaloză Respiratorie"
-        elif hco3 > 26: # Alcalemie + HCO3 crescut = Metabolic
-            primary_disorder = "Alcaloză Metabolică"
-        else:
-            primary_disorder = "Alcaloză (Mixtă sau Complexă)"
-    
-    else: # pH Normal
-        if paco2 > 42 and hco3 > 26:
-            st.write("PaCO2 ↑ și HCO3 ↑ cu pH Normal -> Acidoză Respiratorie + Alcaloză Metabolică")
-        elif paco2 < 38 and hco3 < 22:
-            st.write("PaCO2 ↓ și HCO3 ↓ cu pH Normal -> Alcaloză Respiratorie + Acidoză Metabolică")
-            
-    st.markdown(f"#### Tulburare Primară Identificată: **{primary_disorder}**")
+    elif trend == "Alcaloză":
+        if pco2 < 35 and co2_total > 26:
+            primary_dx = "Alcaloză Mixtă (Resp + Meta)"
+        elif pco2 < 35:
+            primary_dx = "Alcaloză Respiratorie"
+            explanation = "CO2 eliminat excesiv (hiperventilație)."
+        elif co2_total > 26:
+            primary_dx = "Alcaloză Metabolică"
+            explanation = "Bicarbonat/Baze în exces."
 
-    # STEP 4: Compensare
-    st.markdown("### Pasul 4: Compensarea")
-    
-    secondary_disorder = []
-    
-    if "Acidoză Metabolică" in primary_disorder:
-        # Winter's Formula: PaCO2 = (1.5 * HCO3) + 8 (+/- 2)
-        expected_paco2 = (1.5 * hco3) + 8
-        st.write(f"PaCO2 așteptat (Formula Winter): {expected_paco2:.1f} ± 2 mmHg")
-        
-        if paco2 < (expected_paco2 - 2):
-            st.warning("PaCO2 măsurat este mai mic decât cel așteptat -> **Alcaloză Respiratorie Concomitentă**")
-            secondary_disorder.append("Alcaloză Respiratorie")
-        elif paco2 > (expected_paco2 + 2):
-            st.warning("PaCO2 măsurat este mai mare decât cel așteptat -> **Acidoză Respiratorie Concomitentă**")
-            secondary_disorder.append("Acidoză Respiratorie")
-        else:
-            st.success("Compensare Respiratorie Adecvată (Pură).")
+    st.info(f"🧬 Diagnostic Principal Probabil: **{primary_dx}**")
+    if explanation:
+        st.caption(explanation)
 
-    elif "Alcaloză Metabolică" in primary_disorder:
-        # PaCO2 = 40 + 0.6 * (HCO3 - 24)
-        expected_paco2 = 40 + 0.6 * (hco3 - 24)
-        st.write(f"PaCO2 așteptat: {expected_paco2:.1f} mmHg")
-        # Textul nu da o marjă exactă, dar uzual e +/- 2
-        if abs(paco2 - expected_paco2) > 5: # Marjă largă
-            st.warning("Compensarea nu pare adecvată (posibilă tulburare mixtă).")
-        else:
-            st.success("Compensare Respiratorie Adecvată.")
+    # 3. Compensare (dacă pH e normal sau aproape normal)
+    if ph_status == "pH Normal" and primary_dx != "Nedeterminat":
+        st.success("Tulburarea este **Complet Compensată**.")
+    elif primary_dx != "Nedeterminat":
+        st.warning("Tulburarea este **Parțial Compensată** sau **Decompensată**.")
 
-    elif "Acidoză Respiratorie" in primary_disorder:
-        delta_paco2 = paco2 - 40
-        # Acute: HCO3 crește cu delta_paco2 / 10
-        exp_hco3_acute = 24 + (delta_paco2 / 10)
-        # Chronic: HCO3 crește cu 3.5 * delta_paco2 / 10
-        exp_hco3_chronic = 24 + (3.5 * (delta_paco2 / 10))
-        
-        st.write(f"HCO3 așteptat dacă Acut: {exp_hco3_acute:.1f} (±3)")
-        st.write(f"HCO3 așteptat dacă Cronic: {exp_hco3_chronic:.1f}")
-        
-        if abs(hco3 - exp_hco3_acute) <= 3:
-            st.info("Tipar: **Acidoză Respiratorie Acută**")
-        elif abs(hco3 - exp_hco3_chronic) <= 3:
-            st.info("Tipar: **Acidoză Respiratorie Cronică**")
-        else:
-            st.warning("HCO3 nu se potrivește nici cu acut, nici cu cronic pur. Posibilă tulburare Metabolică suprapusă.")
+    return primary_dx, trend
 
-    elif "Alcaloză Respiratorie" in primary_disorder:
-        delta_paco2 = 40 - paco2
-        # Acute: HCO3 scade cu 2 * delta / 10
-        exp_hco3_acute = 24 - (2 * (delta_paco2 / 10))
-        # Chronic: HCO3 scade cu 5 * delta / 10
-        exp_hco3_chronic = 24 - (5 * (delta_paco2 / 10)) # Range 5-7 conform textului
-        
-        st.write(f"HCO3 așteptat dacă Acut: {exp_hco3_acute:.1f}")
-        st.write(f"HCO3 așteptat dacă Cronic: ~{exp_hco3_chronic:.1f}")
-        
-        if hco3 > exp_hco3_acute + 2:
-             st.warning("HCO3 mai mare decât așteptat -> Acidoză Metabolică suprapusă?")
-        elif hco3 < exp_hco3_chronic - 2:
-             st.warning("HCO3 mai mic decât așteptat -> Alcaloză Metabolică suprapusă?")
+def recommend_labs(primary_dx, trend):
+    st.markdown("### 3. Ce analize să ceri în plus?")
+    
+    recs = []
+    
+    # 1. Verificare Lactat (deja introdus)
+    if lactat > 2.0:
+        st.error(f"⚠️ **LACTAT CRESCUT ({lactat})**: Acidoză lactică prezentă (Tip A - ischemie sau Tip B).")
+        recs.append("Monitorizare Lactat seriat.")
+    
+    # 2. Logica pentru Acidoză Metabolică
+    if "Acidoză Metabolică" in primary_dx or (trend == "Acidoză" and co2_total < 22):
+        st.markdown('<div class="recommendation-box">🛑 <b>URGENT: Calcul Anion Gap necesar</b><br>Pacientul are o componentă de acidoză metabolică. Trebuie să diferențiezi între AG Crescut (MUDPILES) și AG Normal (Diaree/RTA).</div>', unsafe_allow_html=True)
+        recs.append("**Ionogramă Serică (Na, K, Cl)** - Obligatoriu pentru calcul Anion Gap.")
+        recs.append("**Albumină** - Pentru corecția Anion Gap.")
+        recs.append("**Glicemie** - Pentru a exclude cetoacidoza diabetică.")
+        recs.append("**Uree și Creatinină** - Pentru a exclude uremia (insuficiență renală).")
+        if lactat < 2.0:
+            recs.append("**Sumar de urină (Corpi cetonici)** - Dacă glicemia e mică (ex: inaniție/alcool).")
 
-    # STEP 5: Anion Gap
-    st.markdown("### Pasul 5: Calcul Anion Gap (AG)")
-    
-    # AG = Na - (Cl + HCO3)
-    ag = na - (cl + hco3)
-    
-    # Ajustare pentru Albumină
-    # Textul spune: Normal AG scade cu 2.5 pentru fiecare 1g/dL albumină sub 4.0
-    # Normal AG e considerat 12.
-    # Dacă albumina e 4.0, expected AG = 12.
-    # Dacă albumina e 2.0, expected AG = 12 - (2.5 * 2) = 7.
-    
-    albumin_diff = 4.0 - albumin
-    expected_ag = 12.0
-    if albumin_diff > 0:
-        expected_ag = 12.0 - (2.5 * albumin_diff)
-    
-    st.write(f"Anion Gap Calculat: **{ag:.1f} mEq/L**")
-    st.write(f"Anion Gap Normal Așteptat (ajustat pt albumină {albumin}): **{expected_ag:.1f} mEq/L**")
-    
-    high_ag_met_acidosis = False
-    
-    if ag > (expected_ag + 2): # Folosim o marjă de +/- 2
-        st.error("⚠️ **Anion Gap Crescut (High AG)** -> Acidoză Metabolică cu AG Crescut prezentă.")
-        high_ag_met_acidosis = True
-        st.markdown("""
-        *Cauze posibile (MUDPILES):* Metanol, Uremie, DKA, Paraldehidă, Isoniazidă/Iron, Lactat, Etilen Glicol, Salicilați.
-        """)
+    # 3. Logica pentru Alcaloză Metabolică (Cazul din imaginea ta: pH 7.43, CO2 54, BE +9)
+    elif "Alcaloză Metabolică" in primary_dx or (trend == "Alcaloză" and co2_total > 26):
+        st.markdown('<div class="recommendation-box">💡 <b>Context: Alcaloză Metabolică</b><br>De obicei cauzată de pierderi de acid (vărsături, diuretice) sau exces de mineralocorticoizi.</div>', unsafe_allow_html=True)
+        recs.append("**Ionogramă (Na, K, Cl)** - Caută Hipokaliemie și Hipocloremie (sensibilă la Clor).")
+        recs.append("**Volum urinar / Stare de hidratare** - Alcaloza de contracție?")
+        recs.append("Verifică medicația: Diuretice de ansă/tiazidice?")
+
+    # 4. Logica pentru Respirator
+    elif "Respiratorie" in primary_dx:
+        if trend == "Acidoză":
+            recs.append("Cauză posibilă: BPOC, Sedare, Obstrucție. Verifică istoricul.")
+        else: # Alcaloză resp
+            recs.append("Cauză posibilă: Durere, Anxietate, Embolie Pulmonară (mai ales dacă pO2 e mic).")
+
+    # 5. Hemoglobina
+    if hb < 7.0:
+        recs.append("Hemogramă completă + Grup Sanguin (Anemie severă).")
+    elif hb > 18.0:
+        recs.append("Posibilă Poliglobulie (secundară hipoxiei cronice?). Hidratare?")
+
+    if recs:
+        st.write("📋 **Lista de comenzi sugerată:**")
+        for rec in recs:
+            st.markdown(f"- {rec}")
     else:
-        st.success("Anion Gap Normal.")
-        if "Acidoză Metabolică" in primary_disorder:
-            st.info("Acesta sugerează o Acidoză Metabolică cu AG Normal (Hyperchloremic). Cauze: Diaree, RTA, etc.")
+        st.markdown('<div class="normal-box">Nu sunt recomandări critice suplimentare bazate strict pe gazo. Corelează cu clinica.</div>', unsafe_allow_html=True)
 
-    # STEP 6: Delta Gap
-    if high_ag_met_acidosis:
-        st.markdown("### Pasul 6: Delta Gap (Raportul ΔAG / ΔHCO3)")
-        
-        delta_ag = ag - 12 # Presupunând 12 ca baseline standard
-        delta_hco3 = 24 - hco3
-        
-        if delta_hco3 == 0:
-            ratio = 0 # Evită împărțirea la zero
-        else:
-            ratio = delta_ag / delta_hco3
-            
-        st.write(f"ΔAG ({delta_ag:.1f}) / ΔHCO3 ({delta_hco3:.1f}) = **{ratio:.2f}**")
-        
-        if ratio < 1.0:
-            st.warning("Raport < 1.0: Sugerează **Acidoză Metabolică Non-AG Concomitentă** (AG Normal).")
-        elif 1.0 <= ratio <= 2.0:
-            st.success("Raport 1.0 - 2.0: **Acidoză Metabolică cu AG Crescut Pură** (Fără alte tulburări metabolice).")
-        elif ratio > 2.0:
-            st.warning("Raport > 2.0: Sugerează **Alcaloză Metabolică Concomitentă** (sau BPOC cronic compensat).")
-
-    st.markdown("---")
-    st.caption("Disclaimer: Această aplicație este un instrument educațional bazat pe ghidul ATS. Nu înlocuiește judecata clinică profesională.")
+# --- EXECUȚIE ---
 
 if st.button("Interpretează Rezultatele", type="primary"):
-    interpret_abg()
+    interpret_oxygenation()
+    st.divider()
+    dx, tr = interpret_acid_base()
+    st.divider()
+    recommend_labs(dx, tr)
+    
+    # Secțiune ascunsă pentru când vin rezultatele de la laborator
+    with st.expander("Ai primit rezultatele la Ionogramă? Calculează Anion Gap aici"):
+        st.write("Dacă ai cerut Na și Cl, introdu-le aici:")
+        na_late = st.number_input("Na+ (Sodiu)", 100, 180, 140)
+        cl_late = st.number_input("Cl- (Clor)", 60, 140, 100)
+        
+        ag_late = na_late - (cl_late + co2_total)
+        st.write(f"**Anion Gap Calculat:** {ag_late:.1f}")
+        if ag_late > 12:
+            st.error("Anion Gap Crescut!")
+        else:
+            st.success("Anion Gap Normal.")
+
 else:
-    st.write("Introduceți valorile în bara laterală și apăsați butonul de mai sus.")
+    st.info("Apasă butonul de mai sus pentru analiză.")
